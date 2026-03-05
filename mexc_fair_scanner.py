@@ -13,7 +13,7 @@ import aiohttp
 # TELEGRAM SETTINGS
 # =========================
 BOT_TOKEN = "8492744850:AAH9hLd4SNXQL8zedZQatuKRlYyLztcSv_k"
-ADMIN_IDS = {235202249}  # добавляй админов сюда
+ADMIN_IDS = {235202249, 234350575}  # администраторы бота
 
 # Куда слать сигналы в форумах (Topics):
 DEFAULT_TOPIC_FAIR = 7   # MEXC FAIR -> topic 7
@@ -235,7 +235,7 @@ def get_chat_settings(store: Dict[str, Any], chat_id: int) -> Dict[str, Any]:
     cs = store["chat_settings"].get(str(chat_id))
     if not isinstance(cs, dict):
         cs = dict(DEFAULT_CHAT_SETTINGS)
-        store["chat_settings"][str(chat_id)] = cs
+        store["chat_settings"].setdefault(str(chat_id), cs)
         save_data(store)
     for k, v in DEFAULT_CHAT_SETTINGS.items():
         if k not in cs:
@@ -246,10 +246,10 @@ def is_subscribed(store: Dict[str, Any], chat_id: int) -> bool:
     return store["subs"].get(str(chat_id)) is not None
 
 def subscribe(store: Dict[str, Any], chat_id: int, chat_type: str, is_forum: bool) -> None:
-    store["subs"][str(chat_id)] = {
+    store["subs"].setdefault(str(chat_id), {
         "chat_type": chat_type,   # "private"/"group"/"supergroup"
         "is_forum": bool(is_forum),
-    }
+    })
     get_chat_settings(store, chat_id)
     save_data(store)
 
@@ -447,8 +447,8 @@ async def load_bingx_marketrows(session: aiohttp.ClientSession, candidate_norm: 
                 t0 = (tick_list[0] if tick_list else {})
                 p0 = (prem_list[0] if prem_list else {})
 
-                bid = _pick_float(b0, ["bidPrice", "bid", "bestBidPrice", "bestBid"])
-                ask = _pick_float(b0, ["askPrice", "ask", "bestAskPrice", "bestAsk"])
+                bid = _pick_float(b0, ["bidPrice", "bid", "bestBidPrice", "bestBid")
+                ask = _pick_float(b0, ["askPrice", "ask", "bestAskPrice", "bestAsk")
                 last = _pick_float(t0, ["lastPrice", "last", "close", "markPrice", "indexPrice"])
 
                 vol_quote = _pick_float(t0, ["quoteVolume", "turnover", "quoteQty", "turnover24h", "turnover24H"])
@@ -873,7 +873,7 @@ async def mexc_fair_loop(session: aiohttp.ClientSession, store: Dict[str, Any], 
         await asyncio.sleep(max(0.5, MEXC_FAIR_REFRESH_SEC - elapsed))
 
 async def arb_loop(session: aiohttp.ClientSession, store: Dict[str, Any], settings_lock: asyncio.Lock):
-    print("✅ ARB loop started (7 exchanges)")
+    print("✅ ARB loop started (7 exchanges misbehaving)")
     last_alert_ts: Dict[str, float] = {}        # key = f"{chat}:{sym}:{buy}:{sell}"
     last_msg_id: Dict[str, int] = {}            # key = f"{chat}:{sym}" -> message_id (для edit)
 
@@ -1031,11 +1031,15 @@ async def telegram_loop(session: aiohttp.ClientSession, store: Dict[str, Any], s
                 user = msg.get("from", {})
                 user_id = user.get("id")
                 is_admin = user_id in ADMIN_IDS
+                chat_type = str(chat.get("type") or "")
+
+                # В группах и супергруппах слушаем ТОЛЬКО администраторов
+                if chat_type in ("group", "supergroup") and not is_admin:
+                    continue
 
                 cs = get_chat_settings(store, chat_id)
 
                 if text.startswith("/start"):
-                    chat_type = str(chat.get("type") or "")
                     is_forum = bool(chat.get("is_forum"))
                     subscribe(store, chat_id, chat_type=chat_type, is_forum=is_forum)
 
@@ -1162,7 +1166,7 @@ async def telegram_loop(session: aiohttp.ClientSession, store: Dict[str, Any], s
                         try:
                             new_spread = parse_percent_arg(parts[1])
                             if new_spread <= 0 or new_spread >= 0.5:
-                                await tg_send(session, chat_id, "Слишком странное значение. Пример: 3 или 3%")
+                                await tg_send(session, chat_id, "Слишком странное значение. Пример: 3 ��ли 3%")
                                 continue
                             async with settings_lock:
                                 cs["arb_min_price_spread"] = new_spread
