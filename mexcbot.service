@@ -1,1 +1,15 @@
-[Unit]\nDescription=MEXC Fair Scanner Bot\nAfter=network.target\n\n[Service]\nType=simple\nUser=root\nWorkingDirectory=/root/Cryptobot1\nEnvironment=BOT_TOKEN=7845075967:AAFPm680dwxUOJ3sz_kM4tWYb30rv_qY9ro\nExecStart=/usr/bin/python3 /root/Cryptobot1/mexc_fair_scanner.py\nRestart=always\nRestartSec=5\n\n[Install]\nWantedBy=multi-user.target
+[Unit]
+Description=MEXC Fair Scanner Bot
+After=network.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/root/Cryptobot1
+Environment=BOT_TOKEN=7845075967:AAFPm680dwxUOJ3sz_kM4tWYb30rv_qY9ro
+ExecStart=/usr/bin/python3 /root/Cryptobot1/mexc_fair_scanner.py
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
