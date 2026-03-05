@@ -20,7 +20,7 @@ systemctl enable mexcbot
 
 # Запускаем сервис
 echo "Запускаем сервис..."
-systemctl start mexcbot
+systemctl restart mexcbot
 
 # Проверяем статус
 echo ""
