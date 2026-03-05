@@ -876,7 +876,6 @@ async def mexc_fair_loop(session: aiohttp.ClientSession, store: Dict[str, Any], 
 async def arb_loop(session: aiohttp.ClientSession, store: Dict[str, Any], settings_lock: asyncio.Lock):
     print("✅ ARB loop started (7 exchanges)")
     last_alert_ts: Dict[str, float] = {}
-    last_msg_id: Dict[str, int] = {}
 
     while True:
         t0 = time.time()
@@ -962,25 +961,11 @@ async def arb_loop(session: aiohttp.ClientSession, store: Dict[str, Any], settin
                     text = make_arb_message(sym, rows_all, best, second, min_spread=min_spread)
                     buttons = make_buttons(best, second)
 
-                    msg_key = f"{chat_id}:{sym}"
-
                     if now - prev < ARB_COOLDOWN_SEC:
-                        if msg_key in last_msg_id:
-                            await tg_edit(session, chat_id, last_msg_id[msg_key], text, buttons=buttons)
                         continue
 
                     last_alert_ts[key_cd] = now
-
-                    if msg_key in last_msg_id:
-                        await tg_edit(session, chat_id, last_msg_id[msg_key], text, buttons=buttons)
-                    else:
-                        resp = await tg_send(session, chat_id, text, buttons=buttons, thread_id=thread_id)
-                        try:
-                            if isinstance(resp, dict) and resp.get("ok") and isinstance(resp.get("result"), dict):
-                                mid = int(resp["result"]["message_id"])
-                                last_msg_id[msg_key] = mid
-                        except Exception:
-                            pass
+                    await tg_send(session, chat_id, text, buttons=buttons, thread_id=thread_id)
 
         except Exception as e:
             print(f"ARB error: {type(e).__name__}: {e}")
