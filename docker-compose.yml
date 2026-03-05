@@ -1,0 +1,27 @@
+version: "3.9"
+
+services:
+  cryptobot:
+    build: .
+    container_name: cryptobot
+    restart: unless-stopped
+    volumes:
+      - ./bot_data.json:/app/bot_data.json
+    environment:
+      - TZ=UTC
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+# Сайт подключается отдельно — пример:
+# web:
+#   image: nginx:alpine
+#   container_name: mysite
+#   restart: unless-stopped
+#   ports:
+#     - "80:80"
+#     - "443:443"
+#   volumes:
+#     - ./site:/usr/share/nginx/html

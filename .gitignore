@@ -1,0 +1,28 @@
+# Данные подписчиков и настройки — не перезаписывать при деплое
+bot_data.json
+subscribers.json
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+dist/
+build/
+
+# Env файлы (токены и секреты)
+.env
+.env.*
+!.env.example
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
