@@ -6,6 +6,7 @@ After=network.target
 Type=simple
 User=root
 WorkingDirectory=/root/Cryptobot1
+Environment=BOT_TOKEN=7845075967:AAFPm680dwxUOJ3sz_kM4tWYb30rv_qY9ro
 ExecStart=/usr/bin/python3 /root/Cryptobot1/mexc_fair_scanner.py
 Restart=always
 RestartSec=5
