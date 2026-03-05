@@ -247,7 +247,7 @@ def is_subscribed(store: Dict[str, Any], chat_id: int) -> bool:
 
 def subscribe(store: Dict[str, Any], chat_id: int, chat_type: str, is_forum: bool) -> None:
     store["subs"].setdefault(str(chat_id), {
-        "chat_type": chat_type,   # "private"/"group"/"supergroup"
+        "chat_type": chat_type,
         "is_forum": bool(is_forum),
     })
     get_chat_settings(store, chat_id)
@@ -293,7 +293,6 @@ async def tg_send(session: aiohttp.ClientSession, chat_id: int, text: str,
 async def tg_edit(session: aiohttp.ClientSession, chat_id: int, message_id: int, text: str,
                   buttons: Optional[List[List[Dict[str, str]]]] = None,
                   thread_id: Optional[int] = None):
-    # Важно: editMessageText НЕ принимает message_thread_id.
     url = f"https://api.telegram.org/bot{BOT_TOKEN}/editMessageText"
     payload: Dict[str, Any] = {
         "chat_id": chat_id,
@@ -447,8 +446,8 @@ async def load_bingx_marketrows(session: aiohttp.ClientSession, candidate_norm: 
                 t0 = (tick_list[0] if tick_list else {})
                 p0 = (prem_list[0] if prem_list else {})
 
-                bid = _pick_float(b0, ["bidPrice", "bid", "bestBidPrice", "bestBid")
-                ask = _pick_float(b0, ["askPrice", "ask", "bestAskPrice", "bestAsk")
+                bid = _pick_float(b0, ["bidPrice", "bid", "bestBidPrice", "bestBid"])
+                ask = _pick_float(b0, ["askPrice", "ask", "bestAskPrice", "bestAsk"])
                 last = _pick_float(t0, ["lastPrice", "last", "close", "markPrice", "indexPrice"])
 
                 vol_quote = _pick_float(t0, ["quoteVolume", "turnover", "quoteQty", "turnover24h", "turnover24H"])
@@ -791,7 +790,7 @@ def make_arb_message(symbol: str, rows_all: List[MarketRow],
 async def mexc_fair_loop(session: aiohttp.ClientSession, store: Dict[str, Any], settings_lock: asyncio.Lock):
     print("✅ MEXC FAIR loop started")
     lev_map = await load_mexc_leverage_map(session)
-    last_alert: Dict[str, float] = {}  # key = f"{chat_id}:{symbol}"
+    last_alert: Dict[str, float] = {}
 
     while True:
         t0 = time.time()
@@ -873,14 +872,13 @@ async def mexc_fair_loop(session: aiohttp.ClientSession, store: Dict[str, Any], 
         await asyncio.sleep(max(0.5, MEXC_FAIR_REFRESH_SEC - elapsed))
 
 async def arb_loop(session: aiohttp.ClientSession, store: Dict[str, Any], settings_lock: asyncio.Lock):
-    print("✅ ARB loop started (7 exchanges misbehaving)")
-    last_alert_ts: Dict[str, float] = {}        # key = f"{chat}:{sym}:{buy}:{sell}"
-    last_msg_id: Dict[str, int] = {}            # key = f"{chat}:{sym}" -> message_id (для edit)
+    print("✅ ARB loop started (7 exchanges)")
+    last_alert_ts: Dict[str, float] = {}
+    last_msg_id: Dict[str, int] = {}
 
     while True:
         t0 = time.time()
         try:
-            # грузим рынки один раз за цикл
             mexc_task = asyncio.create_task(load_mexc_marketrows(session))
             bybit_task = asyncio.create_task(load_bybit_marketrows(session))
             binance_task = asyncio.create_task(load_binance_marketrows(session))
@@ -947,7 +945,6 @@ async def arb_loop(session: aiohttp.ClientSession, store: Dict[str, Any], settin
                     if best.spread_best < min_spread:
                         continue
 
-                    # подтягиваем OKX funding только для участвующих
                     if best.buy.exchange == "OKX":
                         best.buy = await okx_fill_funding_for(session, best.buy)
                     if best.sell.exchange == "OKX":
@@ -969,14 +966,12 @@ async def arb_loop(session: aiohttp.ClientSession, store: Dict[str, Any], settin
                     msg_key = f"{chat_id}:{sym}"
 
                     if now - prev < ARB_COOLDOWN_SEC:
-                        # если есть сообщение — обновим
                         if msg_key in last_msg_id:
                             await tg_edit(session, chat_id, last_msg_id[msg_key], text, buttons=buttons)
                         continue
 
                     last_alert_ts[key_cd] = now
 
-                    # если уже есть сообщение — редактируем, иначе отправляем новое
                     if msg_key in last_msg_id:
                         await tg_edit(session, chat_id, last_msg_id[msg_key], text, buttons=buttons)
                     else:
@@ -1033,7 +1028,6 @@ async def telegram_loop(session: aiohttp.ClientSession, store: Dict[str, Any], s
                 is_admin = user_id in ADMIN_IDS
                 chat_type = str(chat.get("type") or "")
 
-                # В группах и супергруппах слушаем ТОЛЬКО администраторов
                 if chat_type in ("group", "supergroup") and not is_admin:
                     continue
 
@@ -1042,7 +1036,6 @@ async def telegram_loop(session: aiohttp.ClientSession, store: Dict[str, Any], s
                 if text.startswith("/start"):
                     is_forum = bool(chat.get("is_forum"))
                     subscribe(store, chat_id, chat_type=chat_type, is_forum=is_forum)
-
                     await tg_send(
                         session, chat_id,
                         "✅ Подписка включена.\n"
@@ -1153,7 +1146,7 @@ async def telegram_loop(session: aiohttp.ClientSession, store: Dict[str, Any], s
                                       f"- Биржи: {', '.join(cs.get('arb_enabled_exchanges', []))}\n"
                                       f"- Refresh: {ARB_REFRESH_SEC}s\n"
                                       f"- Cooldown: {ARB_COOLDOWN_SEC}s\n"
-                                      f"- Вторая пара если хуже ≤ {SECOND_PAIR_MAX_GAP*100:.1f}%")
+                                      f"- Вторая пара если хуже <= {SECOND_PAIR_MAX_GAP*100:.1f}%")
 
                 elif text.startswith("/arb_spread"):
                     if not is_admin:
@@ -1166,7 +1159,7 @@ async def telegram_loop(session: aiohttp.ClientSession, store: Dict[str, Any], s
                         try:
                             new_spread = parse_percent_arg(parts[1])
                             if new_spread <= 0 or new_spread >= 0.5:
-                                await tg_send(session, chat_id, "Слишком странное значение. Пример: 3 ��ли 3%")
+                                await tg_send(session, chat_id, "Слишком странное значение. Пример: 3 или 3%")
                                 continue
                             async with settings_lock:
                                 cs["arb_min_price_spread"] = new_spread
