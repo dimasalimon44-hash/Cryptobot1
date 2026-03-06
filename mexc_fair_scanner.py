@@ -1,18 +1,21 @@
-                    else:
-                        # Администратор подписывается без проверки сайта
-                        if is_admin:
-                            subscribe(store, chat_id, chat_type=chat_type, is_forum=is_forum)
-                            await tg_send(session, chat_id,
-                                          "✅ Подписка включена (администратор).
-Помощь: /help")
-                        else:
-                            approved = await check_site_subscription(session, chat_id)
-                            if approved:
-                                subscribe(store, chat_id, chat_type=chat_type, is_forum=is_forum)
-                                await tg_send(session, chat_id,
-                                              "✅ Подписка активна! Буду присылать сигналы.
-Помощь: /help")
-                            else:
-                                await tg_send(session, chat_id,
-                                              "❌ Подписка не найдена или не активна.\n"
-                                              "Зарегистрируйтесь на сайте и нажмите «Привязать Telegram»."  
+# Updated mexc_fair_scanner.py with fixes for the /start handler
+
+def start(update, context):
+    chat_type = update.message.chat.type
+    user_id = update.message.from_user.id
+    if chat_type == 'private':
+        if is_admin(user_id):
+            # Subscribe without API check for admin
+            subscribe(user_id)
+        else:
+            # Normal subscription check
+            if check_site_subscription(user_id):
+                update.message.reply_text("You are already subscribed.")
+                return
+            subscribe(user_id)
+    else:
+        update.message.reply_text("This command can only be used in private chat.")
+
+# Other functions remain unchanged
+
+# You can add your additional functions and configurations here.
