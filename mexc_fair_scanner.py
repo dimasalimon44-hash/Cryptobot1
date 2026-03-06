@@ -15,6 +15,7 @@ import aiohttp
 # WARNING: Do NOT hardcode secrets. Use environment variables instead:
 # BOT_TOKEN = os.environ["BOT_TOKEN"]
 BOT_TOKEN = os.environ.get("BOT_TOKEN", "")
+SITE_API_URL = os.environ.get("SITE_API_URL", "https://arbitrageinsights.xyz")
 ADMIN_IDS = {235202249, 234350575}  # администраторы бота
 
 # Куда слать сигналы в форумах (Topics):
@@ -25,6 +26,8 @@ DATA_FILE = "bot_data.json"
 
 POLL_UPDATES_TIMEOUT = 20
 POLL_UPDATES_SLEEP = 1
+
+SUBSCRIPTION_CHECK_INTERVAL_SEC = 300
 
 BTN_LONG = "🟢 LONG"
 BTN_SHORT = "🔴 SHORT"
@@ -272,6 +275,16 @@ def get_sub_meta(store: Dict[str, Any], chat_id: int) -> Dict[str, Any]:
 
 def should_use_topics(meta: Dict[str, Any]) -> bool:
     return (meta.get("chat_type") in ("group", "supergroup")) and bool(meta.get("is_forum"))
+
+async def check_site_subscription(session: aiohttp.ClientSession, chat_id: int) -> bool:
+    """Проверяет активность подписки юзера через API сайта. Возвращает True если подписка активна."""
+    try:
+        url = f"{SITE_API_URL}/api/bot/check-subscription"
+        async with session.get(url, params={"chat_id": str(chat_id)}, timeout=aiohttp.ClientTimeout(total=10)) as r:
+            data = await r.json(content_type=None)
+            return bool(data.get("approved"))
+    except Exception:
+        return True  # при ошибке сети не блокируем
 
 # =========================
 # TELEGRAM API
@@ -974,6 +987,32 @@ async def arb_loop(session: aiohttp.ClientSession, store: Dict[str, Any], settin
         await asyncio.sleep(max(0.5, ARB_REFRESH_SEC - elapsed))
 
 # =========================
+# SUBSCRIPTION CHECK LOOP
+# =========================
+async def subscription_check_loop(session: aiohttp.ClientSession, store: Dict[str, Any]):
+    print("✅ Subscription check loop started")
+    while True:
+        await asyncio.sleep(SUBSCRIPTION_CHECK_INTERVAL_SEC)
+        try:
+            subs = all_subs(store)
+            for chat_id in subs:
+                meta = get_sub_meta(store, chat_id)
+                if meta.get("chat_type") != "private":
+                    continue
+                active = await check_site_subscription(session, chat_id)
+                if not active:
+                    unsubscribe(store, chat_id)
+                    print(f"Subscription expired for chat_id={chat_id}, unsubscribed.")
+                    try:
+                        await tg_send(session, chat_id,
+                                      "❌ Ваша подписка закончилась. Доступ к сигналам приостановлен.\n"
+                                      "Для возобновления обратитесь к администратору на сайте.")
+                    except Exception:
+                        pass
+        except Exception as e:
+            print(f"Subscription check loop error: {type(e).__name__}: {e}")
+
+# =========================
 # TELEGRAM LOOP (commands)
 # =========================
 async def telegram_loop(session: aiohttp.ClientSession, store: Dict[str, Any], settings_lock: asyncio.Lock):
@@ -1019,21 +1058,63 @@ async def telegram_loop(session: aiohttp.ClientSession, store: Dict[str, Any], s
 
                 if text.startswith("/start"):
                     is_forum = bool(chat.get("is_forum"))
-                    subscribe(store, chat_id, chat_type=chat_type, is_forum=is_forum)
-                    await tg_send(
-                        session, chat_id,
-                        "✅ Подписка включена.\n"
-                        "Буду присылать:\n"
-                        f"1) MEXC FAIR (topic {cs.get('topic_fair')}, если это форум)\n"
-                        f"2) FUTURES ARB (topic {cs.get('topic_arb')}, если это форум)\n\n"
-                        "Помощь: /help\n"
-                        "Показать ID топика: /topic (напиши внутри топика)\n"
-                        "Отключить: /stop"
-                    )
+                    parts = text.split(maxsplit=1)
+                    payload_arg = parts[1].strip() if len(parts) > 1 else ""
+
+                    if chat_type in ("group", "supergroup"):
+                        # Группа всегда подписывается без проверки
+                        subscribe(store, chat_id, chat_type=chat_type, is_forum=is_forum)
+                        await tg_send(
+                            session, chat_id,
+                            "✅ Подписка включена.\n"
+                            "Буду присылать:\n"
+                            f"1) MEXC FAIR (topic {cs.get('topic_fair')}, если это форум)\n"
+                            f"2) FUTURES ARB (topic {cs.get('topic_arb')}, если это форум)\n\n"
+                            "Помощь: /help\n"
+                            "Показать ID топика: /topic (напиши внутри топика)\n"
+                            "Отключить: /stop"
+                        )
+                    elif payload_arg.startswith("link_"):
+                        code = payload_arg[len("link_"):]
+                        try:
+                            link_url = f"{SITE_API_URL}/api/bot/link-telegram"
+                            async with session.post(link_url, json={"code": code, "chat_id": chat_id},
+                                                    timeout=aiohttp.ClientTimeout(total=10)) as r:
+                                resp = await r.json(content_type=None)
+                            if resp.get("ok"):
+                                subscribe(store, chat_id, chat_type=chat_type, is_forum=is_forum)
+                                await tg_send(session, chat_id,
+                                              "✅ Telegram успешно привязан! Теперь буду присылать сигналы.")
+                            else:
+                                await tg_send(session, chat_id,
+                                              "❌ Не удалось привязать. Ссылка устарела или неверна. "
+                                              "Получи новую ссылку на сайте.")
+                        except Exception:
+                            await tg_send(session, chat_id,
+                                          "❌ Не удалось привязать. Ссылка устарела или неверна. "
+                                          "Получи новую ссылку на сайте.")
+                    else:
+                        approved = await check_site_subscription(session, chat_id)
+                        if approved:
+                            subscribe(store, chat_id, chat_type=chat_type, is_forum=is_forum)
+                            await tg_send(session, chat_id,
+                                          "✅ Подписка активна! Буду присылать сигналы.\nПомощь: /help")
+                        else:
+                            await tg_send(session, chat_id,
+                                          "❌ Подписка не найдена или не активна.\n"
+                                          "Зарегистрируйтесь на сайте и нажмите «Привязать Telegram».")
 
                 elif text.startswith("/stop"):
                     unsubscribe(store, chat_id)
                     await tg_send(session, chat_id, "🛑 Подписка отключена.\nВключить снова: /start")
+
+                elif text.startswith("/status"):
+                    if chat_type == "private":
+                        active = await check_site_subscription(session, chat_id)
+                        if active:
+                            await tg_send(session, chat_id, "✅ Подписка активна.")
+                        else:
+                            await tg_send(session, chat_id, "❌ Подписка не активна.")
 
                 elif text.startswith("/topic"):
                     thread_id = msg.get("message_thread_id")
@@ -1265,6 +1346,7 @@ async def main():
             telegram_loop(session, store, settings_lock),
             mexc_fair_loop(session, store, settings_lock),
             arb_loop(session, store, settings_lock),
+            subscription_check_loop(session, store),
         )
 
 if __name__ == "__main__":
